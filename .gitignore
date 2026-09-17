@@ -1,2 +1,7 @@
 .pi/
 backups/
+# SwiftPM build artifacts
+swift-metal/.build/
+
+# local scratch (diagnostics, extracts)
+tmp/

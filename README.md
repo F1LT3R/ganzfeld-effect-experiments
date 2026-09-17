@@ -13,14 +13,21 @@ You can learn more about the Ganzfeld Effect here: [https://www.youtube.com/watc
 **WebGL version (recommended)** — just open it, no server needed (works from `file://`):
 
 ```bash
-open index-webgl.html
+open webgl/index-webgl.html
+```
+
+**macOS (Swift + Metal)** — native fullscreen app, zero dependencies:
+
+```bash
+cd swift-metal && swift run    # ⚠️ fullscreen flashing; ESC quits
 ```
 
 **CSS version** — needs to be served over `http` and initializes on your first keypress or click (browser autoplay policy):
 
 ```bash
+cd html-css
 python3 -m http.server 8000
-# → http://localhost:8000  (then press any key or click once)
+# → http://localhost:8000/index.html  (then press any key or click once)
 ```
 
 ## 🎮 Controls
@@ -51,10 +58,9 @@ A circle indicator follows the cursor while dragging, showing the live `Hz` / de
 ## 📁 Layout
 
 ```
-├── index.html                 # CSS version entry point
-├── ganzfeld-flicker.js        # CSS version (rAF + background-color, AudioContext timing)
-├── index-webgl.html           # WebGL version entry point
-├── ganzfeld-flicker-webgl.js  # WebGL version (fullscreen triangle, vsync timing)
+├── html-css/                  # CSS version: index.html + ganzfeld-flicker.js (rAF + background-color, AudioContext timing)
+├── webgl/                     # WebGL version: index-webgl.html + ganzfeld-flicker-webgl.js (fullscreen triangle, vsync timing)
+├── swift-metal/               # macOS Swift + Metal app (SPM executable; see swift-metal/README.md)
 ├── backups/                   # historical versions (gansflicker.js, v2, v3, sim.cjs, …) — gitignored
 └── .pi/                       # session backups — gitignored
 ```
