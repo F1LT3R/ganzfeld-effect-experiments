@@ -18,7 +18,7 @@ overlay.style.fontSize = '14px';
 overlay.style.color = 'rgba(255, 255, 255, 0.7)';
 overlay.style.padding = '20px';
 overlay.style.boxSizing = 'border-box';
-document.body.appendChild(overlay);
+// document.body.appendChild(overlay);
 
 // Create flicker background element
 const flickerBg = document.createElement('div');
@@ -56,7 +56,14 @@ circle.style.fontFamily = 'monospace';
 circle.style.lineHeight = '1.2';
 document.body.appendChild(circle);
 
+let eKeyDown, eClick, initialized
+
 const init = () => {
+	if (initialized) {
+		return
+	}
+	
+	console.log('init')
 	// Initialize AudioContext for precision timing
 	const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -96,11 +103,13 @@ const init = () => {
 
 		if (!isMouseDown) return;
 
-		// Horizontal drag controls frequency (1-40 Hz)
+		// Horizontal drag: frequency (1-50 Hz)
 		const deltaX = e.clientX - startX;
-		const freqRange = 39;
-		const pixelsPerHz = window.innerWidth / freqRange;
-		frequency = Math.max(1, Math.min(40, startFrequency + (deltaX / pixelsPerHz)));
+		const pixelsPerHz = window.innerWidth / 49;
+		frequency = Math.max(
+			1,
+			Math.min(50, startFrequency + deltaX / pixelsPerHz)
+		);
 
 		// Vertical drag controls modulation depth (0-255)
 		const deltaY = e.clientY - startY;
@@ -144,7 +153,6 @@ const init = () => {
 			const period = 1 / frequency;
 			const phase = elapsedTime % period;
 			const halfPeriod = period / 2;
-			console.log( audioCtx.currentTime)
 			
 			// Determine if we should be red or black
 			const shouldBeRed = phase < halfPeriod;
@@ -191,6 +199,13 @@ const init = () => {
 	console.log('Drag left/right to change frequency (1-40 Hz)');
 	console.log('Drag up/down to change modulation depth (0-255)');
 	console.log('Space to pause | ESC to close');
+
+	if (!initialized) {
+		document.removeEventListener(eKeyDown, init) 
+		document.removeEventListener(eClick, init)
+		initialized = true
+	}
 }
 
-document.addEventListener('DOMContentLoaded', init)
+eKeyDown = document.addEventListener('keydown', init)
+eClick = document.addEventListener('mousedown', init)

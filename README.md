@@ -1,8 +1,12 @@
 # 🎞️ GanzFlicker — Ganzfeld Flicker Simulator
 
-A fullscreen red/black flicker generator for exploring the **Ganzfeld effect** and perceptual flicker responses. Drag your mouse to tune the flash frequency (1–40 Hz) and modulation depth (0–255) in real time — no buttons, no forms, just flicker.
+A fullscreen red/black flicker generator for exploring the [**Ganzfeld effect**](https://en.wikipedia.org/wiki/Ganzfeld_effect) and perceptual flicker responses. Drag your mouse to tune the flash frequency (1–50 Hz) and modulation depth (100–255) in real time — no buttons, no forms, just flicker.
 
-⚠️ **Safety first:** rapid full-screen flashes can trigger **photosensitive epilepsy** and discomfort. If anything feels wrong, press `ESC` or close the tab. Do not stare at high frequencies for long.
+# ⚠️🚨👩🏼‍🔬 SAFETY FIRST – Rapid full-screen flashes can trigger **photosensitive epilepsy** and discomfort. If anything feels wrong, press `ESC` or close the tab. Do not stare at high frequencies for long!
+# 🗽⚖️👨🏾‍⚖ THE CREATOR OF THIS CODE ACCEPTS NO LIABILITY FOR HARM. THIS CODE IS SHARED FOR MEDICAL RESEARCH USE ONLY! _USE AT YOUR OWN RISK_ !!!
+# ⚠️ TODAY IS NOT A GOOD DAY TO DIE. ALWAYS CONSULT A MEDICAL PROFESSIONAL _BEFORE_ RUNNING THIS CODE !!! ⚠️
+
+You can learn more about the Ganzfeld Effect here: [https://www.youtube.com/watch?v=hnEGPjrRGGo](https://www.youtube.com/watch?v=hnEGPjrRGGo)
 
 ## 🚀 Quick Start
 
@@ -23,7 +27,7 @@ python3 -m http.server 8000
 
 | Input | Effect |
 |---|---|
-| 🖱️ Drag ← → | Frequency: 1–40 Hz |
+| 🖱️ Drag ← → | Frequency: 1–50 Hz |
 | 🖱️ Drag ↑ ↓ | Modulation depth: 0–255 |
 | ␣ Space | Pause / resume |
 | ⎋ Esc | Stop & clean up |

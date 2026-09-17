@@ -186,12 +186,12 @@
 
     if (!isMouseDown) return;
 
-    // Horizontal drag: frequency (1-40 Hz)
+    // Horizontal drag: frequency (1-50 Hz)
     const deltaX = e.clientX - startX;
-    const pixelsPerHz = window.innerWidth / 39;
+    const pixelsPerHz = window.innerWidth / 49;
     frequency = Math.max(
       1,
-      Math.min(40, startFrequency + deltaX / pixelsPerHz)
+      Math.min(50, startFrequency + deltaX / pixelsPerHz)
     );
 
     // Vertical drag: modulation depth (0-255)
