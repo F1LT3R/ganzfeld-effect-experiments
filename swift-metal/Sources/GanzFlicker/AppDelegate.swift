@@ -1,4 +1,20 @@
 import AppKit
+import CoreVideo
+
+// Raw CVDisplayLink probe (GF_DIAG): @convention(c) callbacks may only
+// touch globals.
+fileprivate var gfCVTickCount = 0
+fileprivate let gfCVCallback: @convention(c) (
+    CVDisplayLink,
+    UnsafePointer<CVTimeStamp>,
+    UnsafePointer<CVTimeStamp>,
+    UInt64,
+    UnsafeMutablePointer<UInt64>,
+    UnsafeMutableRawPointer?
+) -> Int32 = { _, _, _, _, _, _ in
+    gfCVTickCount += 1
+    return 0 // kCVReturnSuccess
+}
 
 /// Borderless windows cannot become key by default; key status is required
 /// for `keyDown` (ESC to quit) to be delivered to the content view.
@@ -46,18 +62,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         window.makeFirstResponder(flickerView)
 
-        window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // A fullscreen app must steal focus for real: the non-forceful
+        // macOS 14 `activate()` refuses to come forward while the
+        // launching terminal still has focus, leaving the window
+        // non-key. MTKView's render loop doesn't start until the window
+        // is key — so the screen stays solid black and ESC never works.
+        NSApp.activate(ignoringOtherApps: true)
 
         // Fullscreen presentation: no menu bar, no dock.
         NSApp.presentationOptions = [.hideMenuBar, .hideDock]
 
+        window.makeKeyAndOrderFront(nil)
+
         // No window frame and no cursor.
         NSCursor.hide()
+
+        // GF_DIAG: real launch, then a render-pipeline report after 5 s.
+        // GF_DIAG_BLACK forces the off state (solid black, zero flashing)
+        // so the diagnostic can be run safely unattended.
+        if ProcessInfo.processInfo.environment["GF_DIAG"] != nil {
+            if ProcessInfo.processInfo.environment["GF_DIAG_BLACK"] != nil {
+                flickerView.setRunning(false)
+            }
+            // Control: a raw Core Video display link independent of the
+            // view's own, to prove vsync delivery in this process.
+            var cvLink: CVDisplayLink?
+            let cvStatus = CVDisplayLinkCreateWithActiveCGDisplays(&cvLink)
+            if let cvLink = cvLink {
+                CVDisplayLinkSetOutputCallback(
+                    cvLink,
+                    gfCVCallback,
+                    nil as UnsafeMutableRawPointer?
+                )
+                CVDisplayLinkStart(cvLink)
+            }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let v = self.flickerView,
+                      let w = self.window else { return }
+                var cvTicks = gfCVTickCount
+                if let cvLink = cvLink {
+                    CVDisplayLinkStop(cvLink)
+                    cvTicks = gfCVTickCount
+                }
+                let deviceName = v.device?.name ?? "none"
+                let guardFailure = v.lastGuardFailure ?? "none"
+                let lines = [
+                    "===== GF_DIAG report =====",
+                    "frames draw() called:   \(v.frameCount)",
+                    "frames presented:       \(v.presentCount)",
+                    "view cv-link ticks:     \(v.cvTickCount)",
+                    "raw CVDisplayLink ticks: \(cvTicks) (create status \(cvStatus))",
+                    "last guard failure:     \(guardFailure)",
+                    "state: isRunning=\(v.isRunning) red=\(v.red) freq=\(v.frequency) phase=\(v.phase)",
+                    "view bounds: \(v.bounds)  drawableSize: \(v.drawableSize)",
+                    "layer contentsScale: \(v.layer?.contentsScale ?? -1)",
+                    "isPaused: \(v.isPaused)  preferredFPS: \(v.preferredFramesPerSecond)",
+                    "window key/visible/screen: \(w.isKeyWindow)/\(w.isVisible)/\(w.screen != nil)  level=\(w.level.rawValue)",
+                    "NSApp isActive: \(NSApp.isActive)",
+                    "pixelFormat raw: \(v.colorPixelFormat.rawValue)  device: \(deviceName)"
+                ]
+                print(lines.joined(separator: "\n"))
+                NSApp.terminate(nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+        }
     }
 
     // Restore the cursor if the app resigns the key window (⌘-tab,

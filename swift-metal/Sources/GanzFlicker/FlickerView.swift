@@ -61,14 +61,33 @@ final class FlickerView: MTKView, MTKViewDelegate {
     private static let rRange = 100...255
     private static let frequencyRange = 1.0...50.0
 
-    private var red: Int = 150          // red channel, 100...255
-    private var frequency: Double = 7.5 // Hz, 1.0...50.0
-    private var isRunning: Bool = true
+    private(set) var red: Int = 150      // red channel, 100...255
+    private(set) var frequency: Double = 7.5 // Hz, 1.0...50.0
+    private(set) var isRunning: Bool = true
+
+    // MARK: Render loop (raw CVDisplayLink)
+    //
+    // AppKit's NSView/NSWindow/NSScreen.displayLink(target:selector:) never
+    // fires in this SDK/OS combination (verified with GF_DIAG), and
+    // MTKView's internal loop relies on it — so the render loop is driven
+    // by a raw CVDisplayLink: its callback (background thread, once per
+    // vsync at the display's native rate) enqueues one coalesced draw()
+    // on the main queue, which calls back into draw(in:) below.
+
+    private var cvLink: CVDisplayLink?
+    private let renderGate = DispatchSemaphore(value: 1)
+
+    // MARK: Diagnostics (GF_DIAG)
+
+    private(set) var frameCount = 0     // draw(in:) invocations
+    private(set) var presentCount = 0   // frames actually presented
+    private(set) var cvTickCount = 0    // CVDisplayLink callback invocations
+    private(set) var lastGuardFailure: String?
 
     /// Square-wave phase accumulator kept in [0, 1). Advances by
     /// `deltaTime * frequency` each frame, so changing the frequency
     /// never causes a phase jump.
-    private var phase: Double = 0
+    private(set) var phase: Double = 0
     private var lastFrameTime: CFTimeInterval?
 
     private var lastMouseLocation: NSPoint?
@@ -131,7 +150,7 @@ final class FlickerView: MTKView, MTKViewDelegate {
         bar.autoresizingMask = [.width, .maxYMargin]
 
         let label = PassthroughLabel(labelWithString: "")
-        label.font = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
+        label.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         label.textColor = .white
         label.drawsBackground = false
         label.isBezeled = false
@@ -150,10 +169,27 @@ final class FlickerView: MTKView, MTKViewDelegate {
         colorPixelFormat = .bgra8Unorm
         clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         framebufferOnly = true
-        preferredFramesPerSecond = 0 // render at the display's native rate
-        isPaused = false
+        preferredFramesPerSecond = 0
         enableSetNeedsDisplay = false
         delegate = self
+
+        // Start the raw CVDisplayLink (once per vsync, display's native
+        // rate). If it cannot be created, fall back to MTKView's internal
+        // render loop.
+        var link: CVDisplayLink?
+        if CVDisplayLinkCreateWithActiveCGDisplays(&link) == kCVReturnSuccess,
+           let link {
+            CVDisplayLinkSetOutputCallback(
+                link,
+                Self.cvDisplayCallback,
+                Unmanaged.passUnretained(self).toOpaque()
+            )
+            CVDisplayLinkStart(link)
+            cvLink = link
+            isPaused = true // we drive the render loop ourselves
+        } else {
+            isPaused = false // let MTKView's internal loop render
+        }
 
         addSubview(statusBar)
         updateStatusBar()
@@ -161,6 +197,37 @@ final class FlickerView: MTKView, MTKViewDelegate {
 
     required init(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    deinit {
+        if let cvLink = cvLink {
+            CVDisplayLinkStop(cvLink)
+        }
+    }
+
+    /// CVDisplayLink output callback — runs on a background thread once
+    /// per vsync. Enqueues at most one in-flight draw on the main queue
+    /// (coalesced via renderGate); MTKView.draw() then calls back into
+    /// the delegate's draw(in:).
+    private static let cvDisplayCallback: @convention(c) (
+        CVDisplayLink,
+        UnsafePointer<CVTimeStamp>,
+        UnsafePointer<CVTimeStamp>,
+        UInt64,
+        UnsafeMutablePointer<UInt64>,
+        UnsafeMutableRawPointer?
+    ) -> Int32 = { _, _, _, _, _, context in
+        guard let context = context else { return 0 }
+        let view = Unmanaged<FlickerView>.fromOpaque(context)
+            .takeUnretainedValue()
+        view.cvTickCount += 1
+        if view.renderGate.wait(timeout: .now()) == .success {
+            DispatchQueue.main.async {
+                view.draw()
+                view.renderGate.signal()
+            }
+        }
+        return 0 // kCVReturnSuccess
     }
 
     // MARK: Responder
@@ -204,7 +271,12 @@ final class FlickerView: MTKView, MTKViewDelegate {
     override func mouseDown(with event: NSEvent) {
         guard event.buttonNumber == 0 else { return }
         // Toggle the animation. Toggling never resets the phase accumulator.
-        isRunning.toggle()
+        setRunning(!isRunning)
+    }
+
+    /// Toggle the animation on/off (mouse click, diagnostics).
+    func setRunning(_ running: Bool) {
+        isRunning = running
         updateStatusBar()
     }
 
@@ -260,6 +332,8 @@ final class FlickerView: MTKView, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        frameCount += 1
+
         // Frame delta, clamped so a long hitch (sleep, Mission Control)
         // cannot lurch the phase.
         let now = CACurrentMediaTime()
@@ -285,13 +359,23 @@ final class FlickerView: MTKView, MTKViewDelegate {
         )
 
         guard
-            let renderPass = view.currentRenderPassDescriptor,
-            let drawable = view.currentDrawable,
-            let commandBuffer = commandQueue.makeCommandBuffer(),
-            let encoder = commandBuffer.makeRenderCommandEncoder(
-                descriptor: renderPass
-            )
+            let renderPass = view.currentRenderPassDescriptor
         else {
+            lastGuardFailure = "currentRenderPassDescriptor nil"
+            return
+        }
+        guard let drawable = view.currentDrawable else {
+            lastGuardFailure = "currentDrawable nil"
+            return
+        }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+            lastGuardFailure = "makeCommandBuffer nil"
+            return
+        }
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(
+            descriptor: renderPass
+        ) else {
+            lastGuardFailure = "makeRenderCommandEncoder nil"
             return
         }
 
@@ -302,6 +386,7 @@ final class FlickerView: MTKView, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        presentCount += 1
     }
 }
 
